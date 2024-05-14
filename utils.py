@@ -1,14 +1,16 @@
 from datetime import datetime, timedelta
+import discord
 import pytz
 import os
 import shlex
 from dateutil.parser import parse
 from discord.ext import commands
 from config import DEDICATED_CHANNEL_IDS, PERMITTED_ROLE_IDS, PARTICIPANTS_LIMIT
+from constants import TIME_FORMAT
 
 timezone = pytz.timezone('Europe/Warsaw')
 
-def can_use_command(interaction) -> bool:
+def can_use_command(interaction: discord.Interaction) -> bool:
     # Check if the command is used in the dedicated channel
     if interaction.channel_id not in DEDICATED_CHANNEL_IDS:
         return False
@@ -20,11 +22,11 @@ def can_use_command(interaction) -> bool:
 
     return False
 
-def parse_command_args(args: str):
+def parse_command_args(args: str) -> tuple[datetime, datetime, bool, bool]:
     # Default values
     current_year = datetime.now().year
-    event_date_str = None
-    deadline_str = None
+    event_date_str = ""
+    deadline_str = ""
     include_leader = True
     send_log = False
 
@@ -34,13 +36,13 @@ def parse_command_args(args: str):
     try:
         for arg in it:
             if arg == '-date':
-                event_date_str = next(it, None)
+                event_date_str = next(it, "") + " " + next(it, "")
             elif arg == '-deadline':
-                deadline_str = next(it, None)
+                deadline_str = next(it, "") + " " + next(it, "")
             elif arg == '-leader':
-                include_leader = next(it, None).lower() == 'true'
+                include_leader = next(it, "").lower() == 'true'
             elif arg == '-sendlog':
-                send_log = next(it, None).lower() == 'true'
+                send_log = next(it, "").lower() == 'true'
             else:
                 raise ValueError(f"Invalid flag given: {arg}")
     except StopIteration:
@@ -49,21 +51,30 @@ def parse_command_args(args: str):
     # Ensure timezone is defined for date manipulation
     timezone = pytz.timezone('Europe/Warsaw')
 
+    # Helper function to parse date and time strings
+    def parse_date(date_str: str) -> datetime:
+        date_formats = ["%d/%m", "%d/%m %H", "%d/%m %H:%M"]
+        for fmt in date_formats:
+            try:
+                # Attempt to parse with the current year
+                return timezone.localize(datetime.strptime(date_str, fmt).replace(year=current_year))
+            except ValueError:
+                continue
+        raise ValueError("Invalid date format.")
+
     # Parse date argument
-    if event_date_str:
+    if event_date_str.strip():
         try:
-            event_date = parse(f"{event_date_str} {current_year}", dayfirst=True)
-            event_date = timezone.localize(event_date)
+            event_date = parse_date(event_date_str.strip())
         except (ValueError, TypeError):
             raise ValueError("Invalid event date format.")
     else:
         raise ValueError("The -date parameter is mandatory.")
 
     # Parse deadline argument
-    if deadline_str:
+    if deadline_str.strip():
         try:
-            deadline_date = parse(f"{deadline_str} {current_year}", dayfirst=True)
-            deadline_date = timezone.localize(deadline_date)
+            deadline_date = parse_date(deadline_str.strip())
         except (ValueError, TypeError):
             raise ValueError("Invalid deadline date format.")
     else:
@@ -74,37 +85,33 @@ def parse_command_args(args: str):
 
     return event_date, deadline_date, include_leader, send_log
 
-def create_summary_message_content(bot, participants: list, event_date):
+def create_summary_message_content(bot: discord.Client, participants: list[tuple[int, str, str]], event_date: datetime) -> tuple[str, str]:
     if not participants:
         return "Nikt się nie zapisał... Lamusy", ""
     
-    message_core_participants = f"\n\n**Wyniki zapisów na siatkówkę w dniu {event_date}:**\n\n"
+    message_core_participants = f"\n\n**Wyniki zapisów na siatkówkę w dniu {event_date.strftime(TIME_FORMAT)}:**\n\n"
     
     for i, (user_id, emoji, timestamp) in enumerate(participants[:PARTICIPANTS_LIMIT], start=1):
-        user = bot.get_user(user_id)
-        user_mention = user.mention if user else f"User ID {user_id}"
-        message_core_participants += f"**{i}** {user_mention} {emoji} o __{timestamp}__\n"
+        message_core_participants += f"**{i}** <@{user_id}> {emoji} o __{timestamp}__\n"
 
     message_substitutes = ""
     if len(participants) > PARTICIPANTS_LIMIT:
         message_substitutes += "\n\n\n**Rezerwowi:**\n\n"
         for i, (user_id, emoji, timestamp) in enumerate(participants[PARTICIPANTS_LIMIT:], start=1):
-            user = bot.get_user(user_id)
-            user_mention = user.mention if user else f"User ID {user_id}"
-            message_substitutes += f"*{i}* {user_mention} {emoji} o __{timestamp}__\n"
+            message_substitutes += f"*{i}* <@{user_id}> {emoji} o __{timestamp}__\n"
 
     return message_core_participants, message_substitutes
 
-def create_log_file(event_date, deadline, include_leader):
+def create_log_file(event_date: datetime, deadline: datetime, include_leader: bool) -> str:
     log_directory = './log/'
     os.makedirs(log_directory, exist_ok=True)
-    log_file_name = f"log_{event_date.strftime('%Y-%m-%d')}.txt"
+    log_file_name = f"log_{event_date.strftime(TIME_FORMAT)}.txt"
     log_file_path = os.path.join(log_directory, log_file_name)
 
     with open(log_file_path, 'w', encoding='utf-8') as log_file:
         log_file.write(f"Log {datetime.now(timezone).isoformat()}\n")
-        log_file.write(f"Data spotkania: {event_date.strftime('%d/%m/%Y %H:%M:%S')}\n")
-        log_file.write(f"Deadline głosowania: {deadline.strftime('%d/%m/%Y %H:%M:%S')}\n")
+        log_file.write(f"Data spotkania: {event_date.strftime(TIME_FORMAT)}\n")
+        log_file.write(f"Deadline głosowania: {deadline.strftime(TIME_FORMAT)}\n")
         log_file.write(f"Uwzględniono Kasię: {'Tak' if include_leader else 'Nie'}\n")
     
     return log_file_path
@@ -113,7 +120,7 @@ def parse_env_list(env_var: str) -> list[int]:
     raw_list = os.getenv(env_var, "").strip('[] ').replace(' ', '')
     return [int(x) for x in raw_list.split(',')] if raw_list else []
 
-def format_participants(list_name, participants):
+def format_participants(list_name: str, participants: list[tuple[int, str, str]]) -> str:
     formatted_string = f"List of {list_name}:\n"
     formatted_string += f"{'User ID':<20} {'Emoji':<6} {'Timestamp'}\n"
     formatted_string += "-" * 50 + "\n"

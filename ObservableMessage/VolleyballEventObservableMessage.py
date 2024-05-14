@@ -1,55 +1,55 @@
 import asyncio
 import discord
 from datetime import datetime
+from constants import TIME_FORMAT
 from utils import can_use_command, parse_command_args, create_log_file, create_summary_message_content, format_participants, timezone
 from config import *
 from ObservableMessage.ObservableMessage import ObservableMessage
 import os
 
 class VolleyballEventObservableMessage(ObservableMessage):
-    def __init__(self, bot, interaction, args):
-        self.bot = bot
-        self.interaction = interaction
-        self.args = args
-        self.participants = []
-        self.invite_message = None
-        self.log_file_path = None
-        self.event_date = None
-        self.deadline_date = None
-        self.include_leader = None
-        self.send_log = None
+    def __init__(self, bot: discord.Client, interaction: discord.Interaction, args: str):
+        self.bot: discord.Client = bot
+        self.interaction: discord.Interaction = interaction
+        self.args: str = args
+        self.participants: list[tuple[int, str, str]] = []
+        self.invite_message: discord.Message = None
+        self.log_file_path: str = None
+        self.event_date: datetime = None
+        self.deadline_date: datetime = None
+        self.include_leader: bool = None
+        self.send_log: bool = None
 
     async def start(self):
-        try:
-            await self.interaction.response.defer()
-        except discord.HTTPException as e:
-            print(f"Failed to defer the interaction response due to an error: {e}")
-            return
+
+        # Acknowledge the interaction
+        await self.interaction.response.defer(ephemeral=True)
 
         print(f"Command input received: {self.args}")
 
         if not can_use_command(self.interaction):
             print(f"{self.interaction.user} does not have permission to use this command.")
-            await self.interaction.followup.send(f"{self.interaction.user.mention}, you do not have permission to use this command.", ephemeral=True)
             return
-
         try:
             self.event_date, self.deadline_date, self.include_leader, self.send_log = parse_command_args(self.args)
             self.log_file_path = create_log_file(self.event_date, self.deadline_date, self.include_leader)
         except ValueError as parsing_error:
             print(str(parsing_error))
-            await self.interaction.followup.send(f"Error parsing command arguments: {parsing_error}", ephemeral=True)
             return
 
         if self.include_leader:
             self.participants.append((LEADER_ID, VOLLEYBALL_EMOJI, None))
 
-        self.invite_message = await self.interaction.followup.send(
-            content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {self.event_date}:\n"
+        channel = self.interaction.channel
+
+        # Delete the deferred response message
+        await self.interaction.delete_original_response()
+        self.invite_message = await channel.send(
+            content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {self.event_date.strftime(TIME_FORMAT)}:\n"
                     f"Przypomnienie: zliczane są wyłącznie reakcje: {VOLLEYBALL_EMOJI} oraz {PLUS_1_EMOJI}\n"
-                    f"Zapisy trwają do {self.deadline_date.strftime('%x %X')}\n"
+                    f"Zapisy trwają do {self.deadline_date.strftime(TIME_FORMAT)}\n"
                     f"**Kto pierwszy, ten lepszy. Liczba miejsc ograniczona do {PARTICIPANTS_LIMIT}**"
-        )
+        , )
         await self.invite_message.add_reaction(VOLLEYBALL_EMOJI)
         await self.invite_message.add_reaction(PLUS_1_REACTION)
 
@@ -58,16 +58,16 @@ class VolleyballEventObservableMessage(ObservableMessage):
             await asyncio.sleep(max(sleep_time, 1))
 
         message_core_participants, message_substitutes = create_summary_message_content(self.bot, self.participants, self.event_date)
-        await self.interaction.followup.send(message_core_participants)
+        await self.interaction.channel.send(message_core_participants)
         if message_substitutes:
-            await self.interaction.followup.send(message_substitutes)
-        await self.interaction.followup.send(MESSAGE_REMINDER_NOTE)
+            await self.interaction.channel.send(message_substitutes)
+        await self.interaction.channel.send(MESSAGE_REMINDER_NOTE)
 
         if self.send_log:
             await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
 
         old_content = self.invite_message.content
-        new_content = f"**Zapisy zostały zakończone o {self.deadline_date.strftime('%x %X')}**\n~~{old_content}~~"
+        new_content = f"**Zapisy zostały zakończone o {self.deadline_date.strftime(TIME_FORMAT)}**\n~~{old_content}~~"
         await self.invite_message.edit(content=new_content)
 
         self.invite_message = None
@@ -96,7 +96,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         if reaction.count < 1:
             await reaction.message.add_reaction(reaction.emoji)
 
-    def handle_add_record(self, user, emoji):
+    def handle_add_record(self, user: discord.User, emoji: str):
         timestamp = datetime.now(timezone).strftime('%x %X')
         if not any(record[0] == user.id and record[1] == str(emoji) for record in self.participants):
             self.participants.append((user.id, str(emoji), timestamp))
@@ -104,7 +104,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         else:
             print(f"Undefined behaviour: attempt to add duplicate record: {user.id} {str(emoji)} {timestamp}")
 
-    def handle_remove_record(self, user, emoji):
+    def handle_remove_record(self, user: discord.User, emoji: str):
         target_record = (user.id, str(emoji))
         for record in self.participants:
             if (record[0], record[1]) == target_record:
@@ -112,7 +112,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
                 self.log("remove", user, emoji)
                 break
 
-    def log(self, action, user, emoji):
+    def log(self, action: str, user: discord.User, emoji: str):
         action_word = "Dodano" if action == "add" else "Usunięto"
         emoji_text = emoji if emoji == VOLLEYBALL_EMOJI else '+1'
         log_message = f"{action_word} pozycję: {user.name} {user.id} {emoji_text}\n"
@@ -121,9 +121,9 @@ class VolleyballEventObservableMessage(ObservableMessage):
             f.write(log_message + "\n")
             f.write(formatted_participants + "\n")
 
-    async def send_log_file(self, interaction, invite_message, log_file_path):
+    async def send_log_file(self, interaction: discord.Interaction, invite_message: discord.Message, log_file_path: str):
         if not os.path.isfile(log_file_path):
-            await interaction.followup.send("Error: Log file could not be created.", ephemeral=True)
+            await interaction.channel.send("Error: Log file could not be created.")
             return
 
         file_to_send = discord.File(log_file_path, filename=os.path.basename(log_file_path))
@@ -143,7 +143,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         try:
             await interaction.user.send(embed=embed, file=file_to_send)
         except discord.Forbidden:
-            await interaction.followup.send(f"{interaction.user.mention}, Byczku, bo nie mogłem ci raportu wysłać z zapisów, weź sprawdź swoje ustawienia!", ephemeral=True)
+            await interaction.channel.send(f"{interaction.user.mention}, Byczku, bo nie mogłem ci raportu wysłać z zapisów, weź sprawdź swoje ustawienia!")
 
     async def cleanup(self):
         if self.invite_message is not None:
