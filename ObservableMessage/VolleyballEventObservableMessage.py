@@ -32,8 +32,10 @@ class VolleyballEventObservableMessage(ObservableMessage):
 
         channel = self.interaction.channel
 
+
         # Delete the deferred response message
         try:
+            await self.interaction.response.defer(ephemeral=True, thinking=True)
             await self.interaction.delete_original_response()
         except discord.NotFound:
             print("Original response not found. Skipping deletion.")
@@ -62,6 +64,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         await self.invite_message.edit(content=new_content)
 
         if send_log:
+            self.log_file_path = f"{str(event_date)}_{str(deadline_date)}"
             await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
 
         self.invite_message = None
