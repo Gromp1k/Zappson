@@ -1,4 +1,5 @@
 import configparser
+import logging
 import discord
 from discord.ext import commands
 
@@ -44,14 +45,9 @@ MESSAGE_REMINDER_NOTE = (
 
 PARTICIPANTS_LIMIT = 21
 
-# Setup Discord bot
-intents = discord.Intents.default()
-intents.guilds = True
-intents.messages = True
-intents.members = True
-intents.reactions = True
-intents.message_content = True
 
-bot = commands.Bot(command_prefix='--', intents=intents)
+
+# Logging level
+logging.basicConfig(level=logging.INFO)
 
 print("Config init")

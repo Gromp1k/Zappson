@@ -1,5 +1,4 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
 from VolleballEventUtils import *
 from config import *
@@ -8,17 +7,19 @@ from datetime import datetime, timezone
 import asyncio
 import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Initialize the bot with a command prefix (even if it won't be used for slash commands)
+volleyball_events: list[VolleyballEventObservableMessage] = []
 
+# Setup Discord bot
 intents = discord.Intents.default()
+intents.guilds = True
+intents.messages = True
+intents.members = True
+intents.reactions = True
 intents.message_content = True
 
-# Initialize the bot with a command prefix (even if it won't be used for slash commands)
 bot = commands.Bot(command_prefix="/", intents=intents)
 tree = bot.tree
-
-volleyball_events: list[VolleyballEventObservableMessage] = []
 
 @tree.command(name="info")
 async def info(interaction: discord.Interaction):
@@ -72,9 +73,6 @@ async def on_ready():
         |___/                                    |_|               
 """)
     try:
-        # Set status to syncing
-        await bot.change_presence(activity=discord.Game(name="Syncing commands..."))
-        
         # Sync commands globally
         await tree.sync()
         logging.info(f'Logged in as {bot.user}!')
@@ -86,31 +84,36 @@ async def on_ready():
             logging.info(command)
         
         # Set status back to online after sync
-        await bot.change_presence(status=discord.Status.online)
+        await bot.change_presence(status=discord.Status.online, activity=discord.Game(name="Ready to go!"))
     except discord.errors.Forbidden as e:
         logging.error(f'Forbidden error during on_ready: {e}')
-        await bot.change_presence(status=discord.Status.dnd, activity=discord.Game(name="Sync Error"))
     except Exception as e:
         logging.error(f'Error during on_ready: {e}')
-        await bot.change_presence(status=discord.Status.dnd, activity=discord.Game(name="Sync Error"))
+        
 
 @bot.event
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
-    for event in volleyball_events:
-        if isinstance(event, VolleyballEventObservableMessage):
-            await event.on_reaction_add(reaction, user)
+    try:
+        event_msg = next((e for e in volleyball_events if reaction.message == e.invite_message), None)
+        if event_msg is not None:
+            await event_msg.on_reaction_add(reaction, user)
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 @bot.event
 async def on_reaction_remove(reaction: discord.Reaction, user: discord.User):
-    for event in volleyball_events:
-        if isinstance(event, VolleyballEventObservableMessage):
-            await event.on_reaction_remove(reaction, user)
+    try:
+        event_msg = next((e for e in volleyball_events if reaction.message == e.invite_message), None)
+        if event_msg is not None:
+            await event_msg.on_reaction_remove(reaction, user)
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 async def cleanup_expired_events():
     while True:
         current_time: datetime = datetime.now(timezone.utc)
         for event in volleyball_events[:]:
-            if event.deadline_date and current_time >= event.deadline_date:
+            if event.event_data.deadline_date and current_time >= event.event_data.deadline_date:
                 volleyball_events.remove(event)
         await asyncio.sleep(300)  # Check every 5 minutes
 
