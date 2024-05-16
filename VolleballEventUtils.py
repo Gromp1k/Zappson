@@ -1,10 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import discord
 import pytz
 import os
-import shlex
-from dateutil.parser import parse
-from discord.ext import commands
+from EventData.VolleyballEventData import *
 from config import DEDICATED_CHANNEL_IDS, PERMITTED_ROLE_IDS, PARTICIPANTS_LIMIT
 from constants import TIME_FORMAT
 
@@ -22,86 +20,20 @@ def can_use_command(interaction: discord.Interaction) -> bool:
 
     return False
 
-def parse_command_args(args: str) -> tuple[datetime, datetime, bool, bool]:
-    # Default values
-    current_year = datetime.now().year
-    event_date_str = ""
-    deadline_str = ""
-    include_leader = True
-    send_log = False
-
-    # Parse arguments using shlex for handling quoted strings properly
-    args = shlex.split(args)
-    it = iter(args)
-    current_flag = None
-
-    # Helper function to process each flag
-    def process_flag(flag, value):
-        nonlocal event_date_str, deadline_str, include_leader, send_log
-        if flag == '-date':
-            event_date_str = value
-        elif flag == '-deadline':
-            deadline_str = value
-        elif flag == '-leader':
-            include_leader = value.lower() == 'true'
-        elif flag == '-sendlog':
-            send_log = value.lower() == 'true'
-        else:
-            raise ValueError(f"Invalid flag given: {flag}")
-
-    try:
-        for arg in it:
-            if arg.startswith('-'):
-                current_flag = arg  # Set the current flag
-            elif current_flag in ['-date', '-deadline']:
-                value = arg
-                # Check if the next argument is a time component
-                next_arg = next(it, None)
-                if next_arg and not next_arg.startswith('-'):
-                    value += f" {next_arg}"  # Append time component if present
-                else:
-                    it = iter([next_arg] + list(it)) if next_arg else it  # Put back the argument for next iteration
-                process_flag(current_flag, value)
-                current_flag = None
-            elif current_flag in ['-leader', '-sendlog']:
-                process_flag(current_flag, arg)
-                current_flag = None
-            else:
-                raise ValueError(f"Invalid flag given: {arg}")  # Raise error for unrecognized flags
-    except StopIteration:
-        raise ValueError("Error: Argument for a flag is missing.")  # Raise error if an argument is missing
-
-    # Ensure timezone is defined for date manipulation
-    timezone = pytz.timezone('Europe/Warsaw')
-
-    # Helper function to parse date and time strings
-    def parse_date(date_str: str) -> datetime:
-        date_formats = ["%d/%m %H:%M", "%d/%m %H", "%d/%m"]  # Supported date formats
-        for fmt in date_formats:
-            try:
-                date = datetime.strptime(date_str, fmt).replace(year=current_year)
-                if fmt == "%d/%m":
-                    date = date.replace(hour=23, minute=59)  # Default time for date only
-                elif fmt == "%d/%m %H":
-                    date = date.replace(minute=0)  # Default minutes for date and hour
-                return timezone.localize(date)  # Localize the date to the specified timezone
-            except ValueError:
-                continue
-        raise ValueError("Invalid date format.")  # Raise error if none of the formats match
-
-    # Parse date argument
+def parse_command_args(event_date_str: str, deadline_str: str, include_leader: bool, send_log: bool) -> VolleyballEventData:   
+    # Parse -date glag value
     if event_date_str:
         try:
-            event_date = parse_date(event_date_str)
+            event_date: datetime = parse_date(event_date_str)
         except (ValueError, TypeError):
             raise ValueError("Invalid event date format.")
     else:
         raise ValueError("The -date parameter is mandatory.")
 
-    # Parse deadline argument
+    # Parse -deadline flag value
     if deadline_str:
         try:
-            deadline_date = parse_date(deadline_str)
+            deadline_date: datetime = parse_date(deadline_str)
         except (ValueError, TypeError):
             raise ValueError("Invalid deadline date format.")
     else:
@@ -116,10 +48,37 @@ def parse_command_args(args: str) -> tuple[datetime, datetime, bool, bool]:
     print(f"-leader set to {include_leader}")
     print(f"-sendlog set to {send_log}")
 
-    return event_date, deadline_date, include_leader, send_log
+    return VolleyballEventData(event_date, deadline_date, include_leader, send_log);
 
-
-
+# Helper function to parse date and time strings
+def parse_date(date_str: str) -> datetime:
+    print(f"parse_date({date_str})")
+    current_year = datetime.now().year
+    timezone = pytz.timezone('Europe/Warsaw')
+    date_formats = ["%d/%m %H:%M", "%d/%m %H", "%d/%m"]
+    
+    for date_format in date_formats:
+        try:
+            if date_format == "%d/%m %H:%M":
+                date = datetime.strptime(date_str, date_format)
+            elif date_format == "%d/%m %H":
+                date = datetime.strptime(date_str, date_format)
+                date = date.replace(minute=0)
+            elif date_format == "%d/%m":
+                date = datetime.strptime(date_str, date_format)
+                date = date.replace(hour=23, minute=59)
+            else:
+                continue
+            date = date.replace(year=current_year)
+            date = timezone.localize(date)
+            return date
+        
+        except ValueError:
+            continue
+    
+    raise ValueError("Date string does not match any of the expected formats.")
+    
+    
 def create_summary_message_content(bot: discord.Client, participants: list[tuple[int, str, str]], event_date: datetime) -> tuple[str, str]:
     if not participants:
         return "Nikt się nie zapisał... Lamusy", ""
@@ -137,7 +96,13 @@ def create_summary_message_content(bot: discord.Client, participants: list[tuple
 
     return message_core_participants, message_substitutes
 
-def create_log_file(event_date: datetime, deadline: datetime, include_leader: bool) -> str:
+def create_log_file(event_data: VolleyballEventData) -> str:
+    event_date: datetime
+    deadline: datetime
+    include_leader: bool
+
+    event_date, deadline, include_leader, _ = event_data.getData();
+
     log_directory = './log/'
     os.makedirs(log_directory, exist_ok=True)
     log_file_name = f"log_{event_date.strftime(TIME_FORMAT)}.txt"

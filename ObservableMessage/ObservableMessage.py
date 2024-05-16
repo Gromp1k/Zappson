@@ -1,4 +1,3 @@
-import asyncio
 import discord
 from abc import ABC, abstractmethod
 class ObservableMessage(ABC):

@@ -1,10 +1,10 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from utils import *
+from VolleballEventUtils import *
 from config import *
 from ObservableMessage.VolleyballEventObservableMessage import VolleyballEventObservableMessage
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import asyncio
 import logging
 
@@ -26,20 +26,30 @@ async def info(interaction: discord.Interaction):
 
 @tree.command(name="event", description="Creates dedicated volleyball event message")
 @app_commands.describe(
-    date="Date of the event (DD/MM HH:MM:SS or similar formats). This argument is mandatory.",
-    deadline="Deadline for the invite message (optional). By default is set 9 hours before the event's date.",
+    date="Date of the event (DD/MM HH:MM:SS or similar formats). Mandatory.",
+    deadline="Deadline for the invite message. By default is set 9 hours before the event's date.",
     leader="Include leader in participants list (true/false). True by default",
-    sendlog="Send log to command invoker (true/false). True by default"
+    sendlog="Send log to command invoker (true/false). True value by default"
 )
-async def start(interaction: discord.Interaction, date: str, deadline: str = None, leader: bool = True, sendlog: bool = True):
-    arg: str = f"-date {date}"
-    if deadline:
-        arg += f" -deadline {deadline}"
-    arg += f" -leader {leader} -sendlog {sendlog}"
+async def start_event(interaction: discord.Interaction, date: str, deadline: str = None, leader: bool = True, sendlog: bool = True):
+    if not can_use_command(interaction):
+        print(f"{interaction.user} does not have permission to use this command.")
+        return
 
-    volleyball_event = VolleyballEventObservableMessage(bot, interaction, arg)
-    volleyball_events.append(volleyball_event)
-    await volleyball_event.start()
+    print("event command start")
+    print(f"-date \'{date}\'")
+    print(f"-deadline \'{deadline}\'")
+    print(f"-leader \'{leader}\'")
+    print(f"-sendlog \'{sendlog}\'")
+
+    try:
+        event_data: VolleyballEventData = parse_command_args(date, deadline, leader, sendlog)
+    except ValueError:
+        print(ValueError)
+    
+    volleyball_event_msg = VolleyballEventObservableMessage(bot, interaction, event_data)
+    volleyball_events.append(volleyball_event_msg)
+    await volleyball_event_msg.start()
 
 @bot.event
 async def on_ready():
@@ -102,7 +112,7 @@ async def cleanup_expired_events():
         for event in volleyball_events[:]:
             if event.deadline_date and current_time >= event.deadline_date:
                 volleyball_events.remove(event)
-        await asyncio.sleep(60)  # Check every minute
+        await asyncio.sleep(300)  # Check every 5 minutes
 
 async def main():
     async with bot:

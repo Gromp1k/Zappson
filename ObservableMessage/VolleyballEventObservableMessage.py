@@ -1,74 +1,68 @@
 import asyncio
 import discord
 from datetime import datetime
+from EventData.VolleyballEventData import VolleyballEventData
 from constants import TIME_FORMAT
-from utils import can_use_command, parse_command_args, create_log_file, create_summary_message_content, format_participants, timezone
+import VolleballEventUtils
+from VolleballEventUtils import timezone
 from config import *
 from ObservableMessage.ObservableMessage import ObservableMessage
 import os
 
 class VolleyballEventObservableMessage(ObservableMessage):
-    def __init__(self, bot: discord.Client, interaction: discord.Interaction, args: str):
+    def __init__(self, 
+                 bot: discord.Client, 
+                 interaction: discord.Interaction,
+                 event_data: VolleyballEventData):
         self.bot: discord.Client = bot
         self.interaction: discord.Interaction = interaction
-        self.args: str = args
         self.participants: list[tuple[int, str, str]] = []
         self.invite_message: discord.Message = None
         self.log_file_path: str = None
-        self.event_date: datetime = None
-        self.deadline_date: datetime = None
-        self.include_leader: bool = None
-        self.send_log: bool = None
+        self.event_data = event_data
 
     async def start(self):
-
-        # Acknowledge the interaction
-        await self.interaction.response.defer(ephemeral=True)
-
-        print(f"Command input received: {self.args}")
-
-        if not can_use_command(self.interaction):
-            print(f"{self.interaction.user} does not have permission to use this command.")
-            return
-        try:
-            self.event_date, self.deadline_date, self.include_leader, self.send_log = parse_command_args(self.args)
-            self.log_file_path = create_log_file(self.event_date, self.deadline_date, self.include_leader)
-        except ValueError as parsing_error:
-            print(str(parsing_error))
-            return
-
-        if self.include_leader:
+        event_date: datetime
+        deadline_date: datetime
+        include_leader: bool
+        send_log: bool 
+        event_date, deadline_date, include_leader, send_log = self.event_data.getData()
+        if include_leader:
             self.participants.append((LEADER_ID, VOLLEYBALL_EMOJI, None))
 
         channel = self.interaction.channel
 
         # Delete the deferred response message
-        await self.interaction.delete_original_response()
+        try:
+            await self.interaction.delete_original_response()
+        except discord.NotFound:
+            print("Original response not found. Skipping deletion.")
+
         self.invite_message = await channel.send(
-            content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {self.event_date.strftime(TIME_FORMAT)}:\n"
+            content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {event_date.strftime(TIME_FORMAT)}:\n"
                     f"Przypomnienie: zliczane są wyłącznie reakcje: {VOLLEYBALL_EMOJI} oraz {PLUS_1_EMOJI}\n"
-                    f"Zapisy trwają do {self.deadline_date.strftime(TIME_FORMAT)}\n"
+                    f"Zapisy trwają do {deadline_date.strftime(TIME_FORMAT)}\n"
                     f"**Kto pierwszy, ten lepszy. Liczba miejsc ograniczona do {PARTICIPANTS_LIMIT}**"
-        , )
+        )
         await self.invite_message.add_reaction(VOLLEYBALL_EMOJI)
         await self.invite_message.add_reaction(PLUS_1_REACTION)
 
-        while datetime.now(timezone) < self.deadline_date:
-            sleep_time = (self.deadline_date - datetime.now(timezone)).total_seconds() / 2
+        while datetime.now(timezone) < deadline_date:
+            sleep_time = (deadline_date - datetime.now(timezone)).total_seconds() / 2
             await asyncio.sleep(max(sleep_time, 1))
 
-        message_core_participants, message_substitutes = create_summary_message_content(self.bot, self.participants, self.event_date)
-        await self.interaction.channel.send(message_core_participants)
+        message_core_participants, message_substitutes = VolleballEventUtils.create_summary_message_content(self.bot, self.participants, event_date)
+        await channel.send(message_core_participants)
         if message_substitutes:
-            await self.interaction.channel.send(message_substitutes)
-        await self.interaction.channel.send(MESSAGE_REMINDER_NOTE)
-
-        if self.send_log:
-            await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
+            await channel.send(message_substitutes)
+        await channel.send(MESSAGE_REMINDER_NOTE)
 
         old_content = self.invite_message.content
-        new_content = f"**Zapisy zostały zakończone o {self.deadline_date.strftime(TIME_FORMAT)}**\n~~{old_content}~~"
+        new_content = f"**Zapisy zostały zakończone o {deadline_date.strftime(TIME_FORMAT)}**\n~~{old_content}~~"
         await self.invite_message.edit(content=new_content)
+
+        if send_log:
+            await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
 
         self.invite_message = None
         self.participants.clear()
@@ -116,7 +110,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         action_word = "Dodano" if action == "add" else "Usunięto"
         emoji_text = emoji if emoji == VOLLEYBALL_EMOJI else '+1'
         log_message = f"{action_word} pozycję: {user.name} {user.id} {emoji_text}\n"
-        formatted_participants = format_participants("Participants", self.participants)
+        formatted_participants = VolleballEventUtils.format_participants("Participants", self.participants)
         with open(self.log_file_path, 'a') as f:
             f.write(log_message + "\n")
             f.write(formatted_participants + "\n")
