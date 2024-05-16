@@ -30,60 +30,95 @@ def parse_command_args(args: str) -> tuple[datetime, datetime, bool, bool]:
     include_leader = True
     send_log = False
 
-    # Parse arguments
+    # Parse arguments using shlex for handling quoted strings properly
     args = shlex.split(args)
     it = iter(args)
+    current_flag = None
+
+    # Helper function to process each flag
+    def process_flag(flag, value):
+        nonlocal event_date_str, deadline_str, include_leader, send_log
+        if flag == '-date':
+            event_date_str = value
+        elif flag == '-deadline':
+            deadline_str = value
+        elif flag == '-leader':
+            include_leader = value.lower() == 'true'
+        elif flag == '-sendlog':
+            send_log = value.lower() == 'true'
+        else:
+            raise ValueError(f"Invalid flag given: {flag}")
+
     try:
         for arg in it:
-            if arg == '-date':
-                event_date_str = next(it, "") + " " + next(it, "")
-            elif arg == '-deadline':
-                deadline_str = next(it, "") + " " + next(it, "")
-            elif arg == '-leader':
-                include_leader = next(it, "").lower() == 'true'
-            elif arg == '-sendlog':
-                send_log = next(it, "").lower() == 'true'
+            if arg.startswith('-'):
+                current_flag = arg  # Set the current flag
+            elif current_flag in ['-date', '-deadline']:
+                value = arg
+                # Check if the next argument is a time component
+                next_arg = next(it, None)
+                if next_arg and not next_arg.startswith('-'):
+                    value += f" {next_arg}"  # Append time component if present
+                else:
+                    it = iter([next_arg] + list(it)) if next_arg else it  # Put back the argument for next iteration
+                process_flag(current_flag, value)
+                current_flag = None
+            elif current_flag in ['-leader', '-sendlog']:
+                process_flag(current_flag, arg)
+                current_flag = None
             else:
-                raise ValueError(f"Invalid flag given: {arg}")
+                raise ValueError(f"Invalid flag given: {arg}")  # Raise error for unrecognized flags
     except StopIteration:
-        raise ValueError("Error: Argument for a flag is missing.")
+        raise ValueError("Error: Argument for a flag is missing.")  # Raise error if an argument is missing
 
     # Ensure timezone is defined for date manipulation
     timezone = pytz.timezone('Europe/Warsaw')
 
     # Helper function to parse date and time strings
     def parse_date(date_str: str) -> datetime:
-        date_formats = ["%d/%m", "%d/%m %H", "%d/%m %H:%M"]
+        date_formats = ["%d/%m %H:%M", "%d/%m %H", "%d/%m"]  # Supported date formats
         for fmt in date_formats:
             try:
-                # Attempt to parse with the current year
-                return timezone.localize(datetime.strptime(date_str, fmt).replace(year=current_year))
+                date = datetime.strptime(date_str, fmt).replace(year=current_year)
+                if fmt == "%d/%m":
+                    date = date.replace(hour=23, minute=59)  # Default time for date only
+                elif fmt == "%d/%m %H":
+                    date = date.replace(minute=0)  # Default minutes for date and hour
+                return timezone.localize(date)  # Localize the date to the specified timezone
             except ValueError:
                 continue
-        raise ValueError("Invalid date format.")
+        raise ValueError("Invalid date format.")  # Raise error if none of the formats match
 
     # Parse date argument
-    if event_date_str.strip():
+    if event_date_str:
         try:
-            event_date = parse_date(event_date_str.strip())
+            event_date = parse_date(event_date_str)
         except (ValueError, TypeError):
             raise ValueError("Invalid event date format.")
     else:
         raise ValueError("The -date parameter is mandatory.")
 
     # Parse deadline argument
-    if deadline_str.strip():
+    if deadline_str:
         try:
-            deadline_date = parse_date(deadline_str.strip())
+            deadline_date = parse_date(deadline_str)
         except (ValueError, TypeError):
             raise ValueError("Invalid deadline date format.")
     else:
-        deadline_date = event_date - timedelta(hours=9)
+        deadline_date = event_date - timedelta(hours=9)  # Default deadline is 9 hours before the event
 
     if event_date <= deadline_date:
-        raise ValueError("Event date must be later than the deadline date.")
+        raise ValueError("Event date must be later than the deadline date.")  # Ensure event date is after the deadline
+
+    # Pretty print of final flag values
+    print(f"-date set to {event_date.strftime(TIME_FORMAT)}")
+    print(f"-deadline set to {deadline_date.strftime(TIME_FORMAT)}")
+    print(f"-leader set to {include_leader}")
+    print(f"-sendlog set to {send_log}")
 
     return event_date, deadline_date, include_leader, send_log
+
+
 
 def create_summary_message_content(bot: discord.Client, participants: list[tuple[int, str, str]], event_date: datetime) -> tuple[str, str]:
     if not participants:
