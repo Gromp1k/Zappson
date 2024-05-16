@@ -120,8 +120,12 @@ def parse_env_list(env_var: str) -> list[int]:
     raw_list = os.getenv(env_var, "").strip('[] ').replace(' ', '')
     return [int(x) for x in raw_list.split(',')] if raw_list else []
 
-def format_participants(list_name: str, participants: list[tuple[int, str, str]]) -> str:
-    formatted_string = f"List of {list_name}:\n"
+def format_participants(participants: list[tuple[int, str, str]]) -> str:
+
+    if len(participants) == 0:
+        return "participants are empty"
+
+    formatted_string = f"List of pariticipants:\n"
     formatted_string += f"{'User ID':<20} {'Emoji':<6} {'Timestamp'}\n"
     formatted_string += "-" * 50 + "\n"
     

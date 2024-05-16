@@ -27,18 +27,18 @@ class VolleyballEventObservableMessage(ObservableMessage):
         include_leader: bool
         send_log: bool 
         event_date, deadline_date, include_leader, send_log = self.event_data.getData()
+        self.log_file_path = f"{str(event_date)}" # TODO: 
         if include_leader:
             self.participants.append((LEADER_ID, VOLLEYBALL_EMOJI, None))
 
         channel = self.interaction.channel
-
 
         # Delete the deferred response message
         try:
             await self.interaction.response.defer(ephemeral=True, thinking=True)
             await self.interaction.delete_original_response()
         except discord.NotFound:
-            print("Original response not found. Skipping deletion.")
+            pass
 
         self.invite_message = await channel.send(
             content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {event_date.strftime(TIME_FORMAT)}:\n"
@@ -63,8 +63,10 @@ class VolleyballEventObservableMessage(ObservableMessage):
         new_content = f"**Zapisy zostały zakończone o {deadline_date.strftime(TIME_FORMAT)}**\n~~{old_content}~~"
         await self.invite_message.edit(content=new_content)
 
+        
         if send_log:
-            self.log_file_path = f"{str(event_date)}_{str(deadline_date)}"
+            
+            print(f"\'self.log_file_path\'")
             await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
 
         self.invite_message = None
@@ -108,15 +110,18 @@ class VolleyballEventObservableMessage(ObservableMessage):
                 self.participants.remove(record)
                 self.log("remove", user, emoji)
                 break
+        
 
     def log(self, action: str, user: discord.User, emoji: str):
         action_word = "Dodano" if action == "add" else "Usunięto"
         emoji_text = emoji if emoji == VOLLEYBALL_EMOJI else '+1'
         log_message = f"{action_word} pozycję: {user.name} {user.id} {emoji_text}\n"
-        formatted_participants = VolleballEventUtils.format_participants("Participants", self.participants)
+        formatted_participants = VolleballEventUtils.format_participants(self.participants)
         with open(self.log_file_path, 'a') as f:
             f.write(log_message + "\n")
             f.write(formatted_participants + "\n")
+        logging.info(log_message)
+        logging.info(VolleballEventUtils.format_participants(self.participants))
 
     async def send_log_file(self, interaction: discord.Interaction, invite_message: discord.Message, log_file_path: str):
         if not os.path.isfile(log_file_path):
