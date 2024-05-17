@@ -53,3 +53,8 @@ l10n/
 # Bot specific
 *.properties
 log/
+*.txt
+
+# Server files
+requirements.txt
+start.sh

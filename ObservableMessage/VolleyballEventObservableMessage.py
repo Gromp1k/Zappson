@@ -27,27 +27,24 @@ class VolleyballEventObservableMessage(ObservableMessage):
         include_leader: bool
         send_log: bool 
         event_date, deadline_date, include_leader, send_log = self.event_data.getData()
-        self.log_file_path = f"{str(event_date)}" # TODO: 
+        self.log_file_path = f"{str(event_date)}" # TODO: make somethin unique.  
         if include_leader:
             self.participants.append((LEADER_ID, VOLLEYBALL_EMOJI, None))
 
         channel = self.interaction.channel
-
-        # Delete the deferred response message
         try:
-            await self.interaction.response.defer(ephemeral=True, thinking=True)
-            await self.interaction.delete_original_response()
-        except discord.NotFound:
-            pass
-
-        self.invite_message = await channel.send(
-            content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {event_date.strftime(TIME_FORMAT)}:\n"
-                    f"Przypomnienie: zliczane są wyłącznie reakcje: {VOLLEYBALL_EMOJI} oraz {PLUS_1_EMOJI}\n"
-                    f"Zapisy trwają do {deadline_date.strftime(TIME_FORMAT)}\n"
-                    f"**Kto pierwszy, ten lepszy. Liczba miejsc ograniczona do {PARTICIPANTS_LIMIT}**"
-        )
-        await self.invite_message.add_reaction(VOLLEYBALL_EMOJI)
-        await self.invite_message.add_reaction(PLUS_1_REACTION)
+            self.invite_message = await channel.send(
+                content=f"<@&{NOTIFY_ROLE_ID}> Zapisy na siatkówkę {event_date.strftime(TIME_FORMAT)}:\n"
+                        f"Przypomnienie: zliczane są wyłącznie reakcje: {VOLLEYBALL_EMOJI} oraz {PLUS_1_EMOJI}\n"
+                        f"Zapisy trwają do {deadline_date.strftime(TIME_FORMAT)}\n"
+                        f"**Kto pierwszy, ten lepszy. Liczba miejsc ograniczona do {PARTICIPANTS_LIMIT}**"
+            )
+            await self.invite_message.add_reaction(VOLLEYBALL_EMOJI)
+            await self.invite_message.add_reaction(PLUS_1_REACTION)
+        except Exception as e:
+            print(f"Error sending invite message: {e}")
+            await self.interaction.followup.send("Failed to send invite message.", ephemeral=True)
+            return
 
         while datetime.now(timezone) < deadline_date:
             sleep_time = (deadline_date - datetime.now(timezone)).total_seconds() / 2
@@ -63,9 +60,7 @@ class VolleyballEventObservableMessage(ObservableMessage):
         new_content = f"**Zapisy zostały zakończone o {deadline_date.strftime(TIME_FORMAT)}**\n~~{old_content}~~"
         await self.invite_message.edit(content=new_content)
 
-        
         if send_log:
-            
             print(f"\'self.log_file_path\'")
             await self.send_log_file(self.interaction, self.invite_message, self.log_file_path)
 
@@ -90,7 +85,10 @@ class VolleyballEventObservableMessage(ObservableMessage):
             return
 
         if (isinstance(reaction.emoji, discord.Emoji) and reaction.emoji.id == PLUS_1_REACTION_ID) or (reaction.emoji == VOLLEYBALL_EMOJI):
-            self.handle_remove_record(user, reaction.emoji)
+            # Present the ResignrationEventMessageView first, on it's callback or desttuctor* activate self.handle_remove_record(user, reaction.emoji)
+            await self.bot.on_reaction_add(reaction,user)
+            await self.__sendResignationMessage(user, reaction)
+            #self.handle_remove_record(user, reaction.emoji)
 
         if reaction.count < 1:
             await reaction.message.add_reaction(reaction.emoji)
@@ -111,7 +109,6 @@ class VolleyballEventObservableMessage(ObservableMessage):
                 self.log("remove", user, emoji)
                 break
         
-
     def log(self, action: str, user: discord.User, emoji: str):
         action_word = "Dodano" if action == "add" else "Usunięto"
         emoji_text = emoji if emoji == VOLLEYBALL_EMOJI else '+1'
@@ -155,3 +152,51 @@ class VolleyballEventObservableMessage(ObservableMessage):
                 print(f"Failed to delete the invite message due to an error: {e}")
         else:
             print("invite_message is None, nothing to delete")
+
+
+    async def __sendResignationMessage(self, user: discord.User, reaction: discord.Reaction):
+        if not isinstance(self.invite_message.channel, discord.channel.TextChannel):
+            return
+        print("about to sessage_handler.send_custom_message")
+        message_handler = CustomMessageHandler(self, user, reaction)
+        await message_handler.send_custom_message()
+
+
+from discord.ui import Button, View
+class CustomMessageHandler:
+    def __init__(self, observedMessage: VolleyballEventObservableMessage, user: discord.User, reaction: discord.Reaction):
+        self.observedMessage = observedMessage
+        self.user = user
+        self.reaction = reaction
+
+    async def send_custom_message(self, ):
+        embed = discord.Embed(
+            title="Uwaga!",
+            description="some text botton",
+            color=discord.Color.red()
+        )
+        view = ResignrationEventMessageView(self)
+        print(f"about to send view {self.observedMessage}")
+        channel = await self.user.create_dm()
+        await channel.send(embed=embed, view=view, delete_after=30)
+        #await observedMessage.interaction.channel.send()
+        #await observedMessage.interaction.followup(content="Test content", embed=embed, view=view)
+
+class ResignrationEventMessageView(View):
+    def __init__(self, handler: CustomMessageHandler):
+        super().__init__()
+        self.handler = handler
+        self.add_item(self.ResignButton(handler))
+
+    class ResignButton(Button):
+        def __init__(self, handler: CustomMessageHandler):
+            super().__init__(label="Delete", style=discord.ButtonStyle.danger)
+            self.observedMessage = handler.observedMessage
+            self.user = handler.user
+            self.reaction = handler.reaction
+
+        async def callback(self, interaction: discord.Interaction):
+            if self.observedMessage.invite_message is not None:
+                print(f"Callback from {self} for ObservableMessage {self.observedMessage} -> remove")
+                self.observedMessage.handle_remove_record(self.user, str(self.reaction))
+            #pass

@@ -21,9 +21,10 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 tree = bot.tree
 
+
 @tree.command(name="info")
 async def info(interaction: discord.Interaction):
-    await interaction.response.send_message("Zappson Discord Bot, designed by Gromp1k")
+    await interaction.response.send_message("Zappson Discord Bot, designed by Gromp1k", ephemeral=True, delete_after=60)
 
 @tree.command(name="event", description="Creates dedicated volleyball event message")
 @app_commands.describe(
@@ -35,8 +36,15 @@ async def info(interaction: discord.Interaction):
 async def start_event(interaction: discord.Interaction, date: str, deadline: str = None, leader: bool = True, sendlog: bool = True):
     if not can_use_command(interaction):
         print(f"{interaction.user} does not have permission to use this command.")
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
         return
-
+    
+    try:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+    except discord.errors.NotFound as e:
+        print(f"Error deferring interaction: {e}")
+        return
+    
     print("event command start")
     print(f"-date \'{date}\'")
     print(f"-deadline \'{deadline}\'")
@@ -45,8 +53,10 @@ async def start_event(interaction: discord.Interaction, date: str, deadline: str
 
     try:
         event_data: VolleyballEventData = parse_command_args(date, deadline, leader, sendlog)
-    except ValueError:
-        print(ValueError)
+    except ValueError as e:
+        print(f"Error parsing command args: {e}")
+        await interaction.followup.send("Invalid command arguments.", ephemeral=True)
+        return
     
     volleyball_event_msg = VolleyballEventObservableMessage(bot, interaction, event_data)
     volleyball_events.append(volleyball_event_msg)
@@ -90,7 +100,6 @@ async def on_ready():
     except Exception as e:
         logging.error(f'Error during on_ready: {e}')
         
-
 @bot.event
 async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
     try:
@@ -109,7 +118,7 @@ async def on_reaction_remove(reaction: discord.Reaction, user: discord.User):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-async def cleanup_expired_events():
+async def __cleanup_expired_events():
     while True:
         current_time: datetime = datetime.now(timezone.utc)
         for event in volleyball_events[:]:
@@ -119,8 +128,9 @@ async def cleanup_expired_events():
 
 async def main():
     async with bot:
-        bot.loop.create_task(cleanup_expired_events())
+        bot.loop.create_task(__cleanup_expired_events())
         await bot.start(TOKEN)
 
 if __name__ == '__main__':
     asyncio.run(main())
+
