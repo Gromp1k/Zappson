@@ -6,10 +6,9 @@ from constants import TIME_FORMAT
 import VolleballEventUtils
 from VolleballEventUtils import timezone
 from config import *
-from ObservableMessage.ObservableMessage import ObservableMessage
 import os
 
-class VolleyballEventObservableMessage(ObservableMessage):
+class VolleyballEventObservableMessage:
     def __init__(self, 
                  bot: discord.Client, 
                  interaction: discord.Interaction,
@@ -86,8 +85,8 @@ class VolleyballEventObservableMessage(ObservableMessage):
 
         if (isinstance(reaction.emoji, discord.Emoji) and reaction.emoji.id == PLUS_1_REACTION_ID) or (reaction.emoji == VOLLEYBALL_EMOJI):
             # Present the ResignrationEventMessageView first, on it's callback or desttuctor* activate self.handle_remove_record(user, reaction.emoji)
-            await self.bot.on_reaction_add(reaction,user)
-            await self.__sendResignationMessage(user, reaction)
+            await self.bot.handle_remove_record(user, str(reaction))
+            #await self.__sendResignationMessage(user, reaction)
             #self.handle_remove_record(user, reaction.emoji)
 
         if reaction.count < 1:
