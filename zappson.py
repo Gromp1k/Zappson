@@ -1,12 +1,12 @@
-import importlib
-import os
 import discord
-from config import *
-from commands import * 
-import logging
-from logging import log as log
+from discord.ext import commands
+import settings
+from settings import logger
 
 class Zappson(commands.Bot):
+    '''
+    Custom Client for zappson.py - Created by Gromp1k
+    '''
     def __init__(self):
         # Setup Discord bot
         intents = discord.Intents.default()
@@ -18,62 +18,59 @@ class Zappson(commands.Bot):
 
         super().__init__(command_prefix="/", intents=intents)
         self.owner_id = 350370126693924885
+        
 
     @classmethod
-    def init(self, token=TOKEN):
+    def init(cls, token= settings.TOKEN):
         try:
-            self().run(token=token, reconnect=True)
+            cls().run(token=token, reconnect=True, root_logger=True)
         except Exception as e:
             print(e)
 
     async def on_ready(self):
-        logging.info(r"""
-     ______                                        
-    |___  /                                        
-       / /   __ _  _ __   _ __   ___   ___   _ __  
-      / /   / _` || '_ \ | '_ \ / __| / _ \ | '_ \ 
-    ./ /___| (_| || |_) || |_) |\__ \| (_) || | | |
-    \_____/ \__,_|| .__/ | .__/ |___/ \___/ |_| |_|
-                  | |    | |                       
-                  |_|    |_|                       
-     _                 _____                                 __   _    
-    | |               |  __ \                               /  | | |   
-    | |__   _   _     | |  \/ _ __   ___   _ __ ___   _ __  `| | | | __
-    | '_ \ | | | |    | | __ | '__| / _ \ | '_ ` _ \ | '_ \  | | | |/ /
-    | |_) || |_| |    | |_\ \| |   | (_) || | | | | || |_) |_| |_|   < 
-    |_.__/  \__, |     \____/|_|    \___/ |_| |_| |_|| .__/ \___/|_|\_\
-             __/ |                                   | |               
-            |___/                                    |_|               
-    """)
+        logger.info(r"""
+ ______                                        
+|___  /                                        
+   / /   __ _  _ __   _ __   ___   ___   _ __  
+  / /   / _` || '_ \ | '_ \ / __| / _ \ | '_ \ 
+./ /___| (_| || |_) || |_) |\__ \| (_) || | | |
+\_____/ \__,_|| .__/ | .__/ |___/ \___/ |_| |_|
+              | |    | |                       
+              |_|    |_|                       
+ _                 _____                                 __   _    
+| |               |  __ \                               /  | | |   
+| |__   _   _     | |  \/ _ __   ___   _ __ ___   _ __  `| | | | __
+| '_ \ | | | |    | | __ | '__| / _ \ | '_ ` _ \ | '_ \  | | | |/ /
+| |_) || |_| |    | |_\ \| |   | (_) || | | | | || |_) |_| |_|   < 
+|_.__/  \__, |     \____/|_|    \___/ |_| |_| |_|| .__/ \___/|_|\_\
+         __/ |                                   | |               
+        |___/                                    |_|               
+
+""")
         try:
-            await self.__load_commands()
-            logging.info(f'Logged in as {self.user}!')
-            # Sync commands globally
-            await self.tree.sync()
-            logging.info("Commands synced successfully!")
+            logger.info(f'{self.user} {self.user.id}!')
+
+            for cog_file in settings.COGS_DIR.glob("*.py"):
+                if cog_file != "__init__.py":
+                    ext_name = f"cogs.{cog_file.name[:-3]}"
+                    await self.load_extension(ext_name)
+                    logger.info(f"Loaded {ext_name}")
+
+            # Lists all text channels in the guilds
+            # for guild in self.guilds:
+            #     logging.info(f"Guild: {guild.name}")
+            #     for channel in guild.text_channels:
+            #         logging.info(f" - {channel.name} (ID: {channel.id})")
             
-            # Print all registered commands
-            logging.info("Registered commands:")
-            for command in await self.tree.fetch_commands():
-                logging.info(command)
-            
+            await self.tree.sync(guild=None)
+
             # Set status back to online after sync
             await self.change_presence(status=discord.Status.online, activity=discord.Game(name="Ready to go!"))
         except discord.errors.Forbidden as e:
-            logging.error(f'Forbidden error during on_ready: {e}')
+            logger.error(f'Forbidden error during on_ready: {e}')
         except Exception as e:
-            logging.error(f'Error during on_ready: {e}')
-    
-    async def __load_commands(self):
-        commands_dir = './commands'
-        for filename in os.listdir(commands_dir):
-            if filename.endswith('.py'):
-                filepath = os.path.join(commands_dir, filename)
-                spec = importlib.util.spec_from_file_location(filename[:-3], filepath)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                if hasattr(module, 'setup'):
-                    module.setup(self)
+            logger.error(f'Error during on_ready: {e}')
+        #Replace with your channel ID and desired log file path
 
 if __name__ == '__main__':
     Zappson.init()

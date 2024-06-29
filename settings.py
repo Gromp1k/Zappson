@@ -50,6 +50,7 @@ CMDS_DIR = BASE_DIR / "cmds"
 COGS_DIR = BASE_DIR / "cogs"
 
 
+
 LOGGING_CONFIG = {
     "version": 1,
     "disabled_existing_loggers": False,
@@ -89,3 +90,4 @@ LOGGING_CONFIG = {
 }
 
 dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger("bot")

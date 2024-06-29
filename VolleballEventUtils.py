@@ -3,7 +3,7 @@ import discord
 import pytz
 import os
 from EventData.VolleyballEventData import *
-from config import DEDICATED_CHANNEL_IDS, PERMITTED_ROLE_IDS, PARTICIPANTS_LIMIT
+from settings import DEDICATED_CHANNEL_IDS, PERMITTED_ROLE_IDS, PARTICIPANTS_LIMIT
 from constants import TIME_FORMAT
 
 timezone = pytz.timezone('Europe/Warsaw')

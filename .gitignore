@@ -53,6 +53,8 @@ l10n/
 # Bot specific
 *.properties
 log/
+logs/
+data/
 *.txt
 
 # Server files

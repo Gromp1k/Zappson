@@ -5,7 +5,7 @@ from EventData.VolleyballEventData import VolleyballEventData
 from constants import TIME_FORMAT
 import VolleballEventUtils
 from VolleballEventUtils import timezone
-from config import *
+from settings import *
 import os
 
 class VolleyballEventObservableMessage:
